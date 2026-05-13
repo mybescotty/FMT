@@ -262,6 +262,12 @@
     </div>
 
     <div class="field">
+      <label for="input-slot-days">Days per service slot</label>
+      <input type="number" id="input-slot-days" min="1" step="1" placeholder="42">
+      <div class="hint">Calendar days between each of the 48 cycle events</div>
+    </div>
+
+    <div class="field">
       <label for="input-actual-mechanics">Actual mechanics available <em style="font-style:normal;color:var(--muted)">(optional)</em></label>
       <input type="number" id="input-actual-mechanics" min="1" step="1" placeholder="Enter to see utilisation">
       <div class="hint">Shows utilisation % and over/under capacity</div>
@@ -276,17 +282,15 @@
       <thead>
         <tr>
           <th>Type</th>
-          <th style="text-align:right">Interval (days)</th>
+          <th style="text-align:right">Avg interval</th>
           <th style="text-align:right">Hours / visit</th>
-          <th></th>
         </tr>
       </thead>
       <tbody id="services-tbody"></tbody>
     </table>
 
     <div class="tbl-actions">
-      <button class="btn btn-primary" id="btn-add-row" type="button">+ Add Row</button>
-      <button class="btn btn-ghost" id="btn-reset-services" type="button">Reset to Defaults</button>
+      <button class="btn btn-ghost" id="btn-reset-services" type="button">Reset Hours</button>
     </div>
   </section>
 
@@ -335,18 +339,32 @@
 </footer>
 
 <script>
-  /* ── Static defaults ── */
-  const DEFAULT_SERVICES = [
-    { id: 'A', intervalDays: 42,   hoursPerVisit: 1.5 },
-    { id: 'B', intervalDays: 84,   hoursPerVisit: 3   },
-    { id: 'C', intervalDays: 168,  hoursPerVisit: 5   },
-    { id: 'D', intervalDays: 365,  hoursPerVisit: 8   },
-    { id: 'E', intervalDays: 730,  hoursPerVisit: 12  },
-    { id: 'F', intervalDays: 1095, hoursPerVisit: 16  },
-    { id: 'G', intervalDays: 1825, hoursPerVisit: 24  },
+  /* ── Service cycle: 48 slots, each slotDays calendar days apart ── */
+  const SERVICE_CYCLE = [
+    'A','B','A','C','A','B','A','D',
+    'A','B','A','C','A','B','A','E',
+    'A','B','A','C','A','B','A','D',
+    'A','B','A','C','A','B','A','F',
+    'A','B','A','C','A','B','A','D',
+    'A','B','A','C','A','B','A','G'
   ];
+  const CYCLE_SLOTS = 48;
 
-  let services = DEFAULT_SERVICES.map(s => ({ ...s }));
+  /* Precompute per-cycle counts: {A:24, B:12, C:6, D:3, E:1, F:1, G:1} */
+  const COUNT_PER_CYCLE = {};
+  SERVICE_CYCLE.forEach(function(t) { COUNT_PER_CYCLE[t] = (COUNT_PER_CYCLE[t]||0)+1; });
+
+  /* ── Service hours defaults (intervals removed — driven by cycle) ── */
+  const DEFAULT_SERVICES = [
+    { id:'A', hoursPerVisit:1.5 },
+    { id:'B', hoursPerVisit:3   },
+    { id:'C', hoursPerVisit:5   },
+    { id:'D', hoursPerVisit:8   },
+    { id:'E', hoursPerVisit:12  },
+    { id:'F', hoursPerVisit:16  },
+    { id:'G', hoursPerVisit:24  },
+  ];
+  let services = DEFAULT_SERVICES.map(function(s){ return {id:s.id, hoursPerVisit:s.hoursPerVisit}; });
 
   /* ── Core calculation ── */
   function calculate() {
@@ -354,70 +372,78 @@
     const weeks           = parseFloat(document.getElementById('input-weeks').value)             || 0;
     const daysPerWeek     = parseFloat(document.getElementById('input-days-per-week').value)     || 5;
     const hoursPerDay     = parseFloat(document.getElementById('input-hours-per-day').value)     || 8;
+    const slotDays        = parseFloat(document.getElementById('input-slot-days').value)         || 42;
     const actualMechanics = parseFloat(document.getElementById('input-actual-mechanics').value)  || 0;
 
-    /* Service intervals are elapsed calendar time, not working days */
+    /* Calendar days for cycle math; working days for capacity */
     const planningCalDays  = weeks * 7;
-    /* Mechanic capacity is working days only */
     const planningWorkDays = weeks * daysPerWeek;
 
-    const rows = services.map(svc => {
-      const intervalDays  = svc.intervalDays  || 1; /* guard divide-by-zero */
-      const visitsPerBus  = planningCalDays / intervalDays;
-      const totalHours    = visitsPerBus * fleetSize * svc.hoursPerVisit;
-      return { id: svc.id, intervalDays: svc.intervalDays, hoursPerVisit: svc.hoursPerVisit,
-               visitsPerBus, totalHours };
+    /* How many full 48-slot cycles fit, and how many slots remain */
+    const cycleDays       = CYCLE_SLOTS * slotDays;
+    const fullCycles      = cycleDays > 0 ? Math.floor(planningCalDays / cycleDays) : 0;
+    const remainderDays   = cycleDays > 0 ? planningCalDays % cycleDays : 0;
+    const slotsInRemainder= slotDays  > 0 ? Math.floor(remainderDays / slotDays)    : 0;
+
+    /* Count partial-cycle events per type */
+    const partialCounts = {};
+    for (var i = 0; i < slotsInRemainder && i < CYCLE_SLOTS; i++) {
+      var t = SERVICE_CYCLE[i];
+      partialCounts[t] = (partialCounts[t]||0) + 1;
+    }
+
+    const rows = services.map(function(svc) {
+      var visitsPerBus = fullCycles * (COUNT_PER_CYCLE[svc.id]||0) + (partialCounts[svc.id]||0);
+      var totalHours   = visitsPerBus * fleetSize * svc.hoursPerVisit;
+      return { id:svc.id, hoursPerVisit:svc.hoursPerVisit, visitsPerBus:visitsPerBus, totalHours:totalHours };
     });
 
-    const grandTotalHours           = rows.reduce((s, r) => s + r.totalHours, 0);
+    const grandTotalHours           = rows.reduce(function(s,r){ return s+r.totalHours; }, 0);
     const availableHoursPerMechanic = planningWorkDays * hoursPerDay;
     const mechanicsNeeded           = availableHoursPerMechanic > 0
       ? grandTotalHours / availableHoursPerMechanic : 0;
 
-    const rowsWithPct = rows.map(r => ({
-      ...r,
-      pct: grandTotalHours > 0 ? (r.totalHours / grandTotalHours) * 100 : 0,
-    }));
+    const rowsWithPct = rows.map(function(r) {
+      return Object.assign({}, r, { pct: grandTotalHours > 0 ? (r.totalHours/grandTotalHours)*100 : 0 });
+    });
 
-    return { rowsWithPct, grandTotalHours, mechanicsNeeded, actualMechanics,
-             availableHoursPerMechanic, planningWorkDays, hoursPerDay };
+    return { rowsWithPct:rowsWithPct, grandTotalHours:grandTotalHours,
+             mechanicsNeeded:mechanicsNeeded, actualMechanics:actualMechanics,
+             availableHoursPerMechanic:availableHoursPerMechanic,
+             planningWorkDays:planningWorkDays, hoursPerDay:hoursPerDay,
+             slotDays:slotDays, cycleDays:cycleDays };
   }
 
   /* ── DOM update ── */
   function render() {
-    const result = calculate();
-    const { rowsWithPct, grandTotalHours, mechanicsNeeded,
-            actualMechanics, planningWorkDays, hoursPerDay } = result;
+    var result = calculate();
+    var rowsWithPct = result.rowsWithPct, grandTotalHours = result.grandTotalHours;
+    var mechanicsNeeded = result.mechanicsNeeded, actualMechanics = result.actualMechanics;
+    var planningWorkDays = result.planningWorkDays, hoursPerDay = result.hoursPerDay;
 
-    /* Big mechanic number */
     document.getElementById('result-mechanics-needed').textContent =
       mechanicsNeeded.toFixed(2);
 
-    const capHrs = (planningWorkDays * hoursPerDay).toFixed(0);
+    var capHrs = (planningWorkDays * hoursPerDay).toFixed(0);
     document.getElementById('result-mechanics-sub').textContent =
       planningWorkDays > 0
         ? capHrs + ' available hrs per mechanic over period'
         : 'Enter fleet details to calculate';
 
-    /* Total hours */
     document.getElementById('result-total-hours').textContent =
       grandTotalHours.toFixed(1) + ' h';
 
-    /* Utilisation block */
-    const utilBlock = document.getElementById('result-utilisation-block');
+    var utilBlock = document.getElementById('result-utilisation-block');
     if (actualMechanics > 0 && mechanicsNeeded > 0) {
       utilBlock.style.display = '';
-      const utilPct  = (mechanicsNeeded / actualMechanics) * 100;
-      const diffMech = mechanicsNeeded - actualMechanics;
-
-      const pctEl = document.getElementById('result-util-pct');
+      var utilPct  = (mechanicsNeeded / actualMechanics) * 100;
+      var diffMech = mechanicsNeeded - actualMechanics;
+      var pctEl = document.getElementById('result-util-pct');
       pctEl.textContent = utilPct.toFixed(1) + '%';
-      pctEl.className   = 'stat-value ' + (
-        utilPct > 100 ? 'stat-danger' : utilPct > 90 ? 'stat-warn' : 'stat-good'
-      );
+      pctEl.className   = 'stat-value ' +
+        (utilPct > 100 ? 'stat-danger' : utilPct > 90 ? 'stat-warn' : 'stat-good');
       pctEl.style.fontSize = '1.6rem';
-
-      const sign = diffMech > 0 ? '+' : '';
+      var sign = diffMech > 0 ? '+' : '';
       document.getElementById('result-capacity-diff').textContent =
         sign + diffMech.toFixed(2) + ' mechanics — ' +
         (diffMech > 0 ? 'over capacity' : 'spare capacity');
@@ -425,10 +451,9 @@
       utilBlock.style.display = 'none';
     }
 
-    /* Breakdown table */
-    const tbody = document.getElementById('breakdown-tbody');
-    tbody.innerHTML = rowsWithPct.map(r =>
-      '<tr>' +
+    var tbody = document.getElementById('breakdown-tbody');
+    tbody.innerHTML = rowsWithPct.map(function(r) {
+      return '<tr>' +
         '<td class="svc-label">' + r.id + '</td>' +
         '<td class="num">' + r.totalHours.toFixed(1) + ' h</td>' +
         '<td class="num">' + r.pct.toFixed(1) + '%</td>' +
@@ -437,90 +462,71 @@
             '<div class="bar-fill" style="width:' + r.pct.toFixed(1) + '%"></div>' +
           '</div>' +
         '</td>' +
-      '</tr>'
-    ).join('');
+      '</tr>';
+    }).join('');
   }
 
-  /* ── Rebuild editable service table from services[] ── */
+  /* ── Rebuild service table (type + avg-interval read-only; hours editable) ── */
   function rebuildServiceTable() {
-    const tbody = document.getElementById('services-tbody');
-    tbody.innerHTML = services.map((svc, i) =>
-      '<tr data-idx="' + i + '">' +
-        '<td class="svc-label" contenteditable="true">' + svc.id + '</td>' +
-        '<td class="num" contenteditable="true">' + svc.intervalDays + '</td>' +
+    var slotDays = parseFloat(document.getElementById('input-slot-days').value) || 42;
+    var tbody = document.getElementById('services-tbody');
+    tbody.innerHTML = services.map(function(svc, i) {
+      var perCycle  = COUNT_PER_CYCLE[svc.id] || 0;
+      var avgInterval = perCycle > 0 ? Math.round((CYCLE_SLOTS * slotDays) / perCycle) : '—';
+      return '<tr data-idx="' + i + '">' +
+        '<td class="svc-label">' + svc.id + '</td>' +
+        '<td class="num" style="color:var(--muted)">' + avgInterval + 'd</td>' +
         '<td class="num" contenteditable="true">' + svc.hoursPerVisit + '</td>' +
-        '<td><button class="btn-del" data-idx="' + i + '" type="button" title="Remove row">✕</button></td>' +
-      '</tr>'
-    ).join('');
+      '</tr>';
+    }).join('');
   }
 
-  /* ── Read editable cells back into services[] ── */
+  /* ── Read hours back from table ── */
   function syncServicesFromTable() {
-    services = Array.from(
-      document.querySelectorAll('#services-tbody tr')
-    ).map(tr => {
-      const cells = tr.querySelectorAll('td');
-      return {
-        id:            cells[0].textContent.trim() || '?',
-        intervalDays:  parseFloat(cells[1].textContent) || 1,
-        hoursPerVisit: parseFloat(cells[2].textContent) || 0,
-      };
+    var rows = document.querySelectorAll('#services-tbody tr');
+    rows.forEach(function(tr) {
+      var idx   = parseInt(tr.dataset.idx, 10);
+      var cells = tr.querySelectorAll('td');
+      if (services[idx]) {
+        services[idx].hoursPerVisit = parseFloat(cells[2].textContent) || 0;
+      }
     });
   }
 
   /* ── Initialise ── */
   function init() {
-    /* Pre-populate inputs with sensible defaults */
-    document.getElementById('input-fleet-size').value   = 50;
-    document.getElementById('input-weeks').value        = 52;
-    document.getElementById('input-days-per-week').value= 5;
-    document.getElementById('input-hours-per-day').value= 8;
+    document.getElementById('input-fleet-size').value    = 50;
+    document.getElementById('input-weeks').value         = 52;
+    document.getElementById('input-days-per-week').value = 5;
+    document.getElementById('input-hours-per-day').value = 8;
+    document.getElementById('input-slot-days').value     = 42;
 
     rebuildServiceTable();
     render();
 
-    /* Live recalculation on fleet inputs */
+    /* Live recalculation on any fleet/slot input change */
     document.getElementById('inputs-panel').addEventListener('input', function() {
+      /* Rebuild table when slot-days changes so avg-interval column updates */
+      if (document.activeElement && document.activeElement.id === 'input-slot-days') {
+        rebuildServiceTable();
+      }
       render();
     });
 
-    /* Live recalculation when service table cells are edited */
+    /* Live recalculation when hours cells are edited */
     document.getElementById('services-tbody').addEventListener('input', function() {
       syncServicesFromTable();
       render();
     });
 
-    /* Suppress Enter in contenteditable cells (prevents <br> insertion) */
+    /* Suppress Enter in contenteditable cells */
     document.getElementById('services-tbody').addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        e.target.blur();
-      }
+      if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
     });
 
-    /* Delete row */
-    document.getElementById('services-tbody').addEventListener('click', function(e) {
-      const btn = e.target.closest('.btn-del');
-      if (!btn) return;
-      const idx = parseInt(btn.dataset.idx, 10);
-      services.splice(idx, 1);
-      rebuildServiceTable();
-      render();
-    });
-
-    /* Add row */
-    document.getElementById('btn-add-row').addEventListener('click', function() {
-      services.push({ id: String.fromCharCode(65 + services.length), intervalDays: 365, hoursPerVisit: 1 });
-      rebuildServiceTable();
-      render();
-      /* Focus the new row's first cell */
-      const rows = document.querySelectorAll('#services-tbody tr');
-      if (rows.length) rows[rows.length - 1].querySelector('[contenteditable]').focus();
-    });
-
-    /* Reset to defaults */
+    /* Reset hours to defaults */
     document.getElementById('btn-reset-services').addEventListener('click', function() {
-      services = DEFAULT_SERVICES.map(s => ({ ...s }));
+      services = DEFAULT_SERVICES.map(function(s){ return {id:s.id, hoursPerVisit:s.hoursPerVisit}; });
       rebuildServiceTable();
       render();
     });
