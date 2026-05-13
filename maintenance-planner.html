@@ -292,6 +292,12 @@
     <div class="tbl-actions">
       <button class="btn btn-ghost" id="btn-reset-services" type="button">Reset Hours</button>
     </div>
+
+    <div class="field" style="margin-top:1rem;border-top:1px solid var(--border);padding-top:0.75rem">
+      <label for="input-daily-maint">Daily running maintenance (hrs/day)</label>
+      <input type="number" id="input-daily-maint" min="0" step="0.5" placeholder="e.g. 4">
+      <div class="hint">Routine depot hours per working day — added to service cycle total</div>
+    </div>
   </section>
 
   <!-- ── Results panel ── -->
@@ -373,6 +379,7 @@
     const daysPerWeek     = parseFloat(document.getElementById('input-days-per-week').value)     || 5;
     const hoursPerDay     = parseFloat(document.getElementById('input-hours-per-day').value)     || 8;
     const slotDays        = parseFloat(document.getElementById('input-slot-days').value)         || 42;
+    const dailyMaintHours = parseFloat(document.getElementById('input-daily-maint').value)       || 0;
     const actualMechanics = parseFloat(document.getElementById('input-actual-mechanics').value)  || 0;
 
     /* Calendar days for cycle math; working days for capacity */
@@ -398,7 +405,9 @@
       return { id:svc.id, hoursPerVisit:svc.hoursPerVisit, visitsPerBus:visitsPerBus, totalHours:totalHours };
     });
 
-    const grandTotalHours           = rows.reduce(function(s,r){ return s+r.totalHours; }, 0);
+    const scheduledHours            = rows.reduce(function(s,r){ return s+r.totalHours; }, 0);
+    const dailyMaintTotal           = dailyMaintHours * planningWorkDays;
+    const grandTotalHours           = scheduledHours + dailyMaintTotal;
     const availableHoursPerMechanic = planningWorkDays * hoursPerDay;
     const mechanicsNeeded           = availableHoursPerMechanic > 0
       ? grandTotalHours / availableHoursPerMechanic : 0;
@@ -408,6 +417,7 @@
     });
 
     return { rowsWithPct:rowsWithPct, grandTotalHours:grandTotalHours,
+             dailyMaintTotal:dailyMaintTotal,
              mechanicsNeeded:mechanicsNeeded, actualMechanics:actualMechanics,
              availableHoursPerMechanic:availableHoursPerMechanic,
              planningWorkDays:planningWorkDays, hoursPerDay:hoursPerDay,
@@ -418,6 +428,7 @@
   function render() {
     var result = calculate();
     var rowsWithPct = result.rowsWithPct, grandTotalHours = result.grandTotalHours;
+    var dailyMaintTotal = result.dailyMaintTotal;
     var mechanicsNeeded = result.mechanicsNeeded, actualMechanics = result.actualMechanics;
     var planningWorkDays = result.planningWorkDays, hoursPerDay = result.hoursPerDay;
 
@@ -464,6 +475,20 @@
         '</td>' +
       '</tr>';
     }).join('');
+    if (dailyMaintTotal > 0) {
+      var dailyPct = grandTotalHours > 0 ? (dailyMaintTotal / grandTotalHours) * 100 : 0;
+      tbody.innerHTML +=
+        '<tr style="border-top:1px solid var(--border)">' +
+          '<td class="svc-label" style="color:var(--warn)">Daily</td>' +
+          '<td class="num">' + dailyMaintTotal.toFixed(1) + ' h</td>' +
+          '<td class="num">' + dailyPct.toFixed(1) + '%</td>' +
+          '<td class="bar-cell">' +
+            '<div class="bar-track">' +
+              '<div class="bar-fill" style="width:' + dailyPct.toFixed(1) + '%;background:var(--warn)"></div>' +
+            '</div>' +
+          '</td>' +
+        '</tr>';
+    }
   }
 
   /* ── Rebuild service table (type + avg-interval read-only; hours editable) ── */
@@ -500,6 +525,7 @@
     document.getElementById('input-days-per-week').value = 5;
     document.getElementById('input-hours-per-day').value = 8;
     document.getElementById('input-slot-days').value     = 42;
+    document.getElementById('input-daily-maint').value   = 0;
 
     rebuildServiceTable();
     render();
@@ -523,6 +549,9 @@
     document.getElementById('services-tbody').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
     });
+
+    /* Daily running maintenance — live update */
+    document.getElementById('input-daily-maint').addEventListener('input', render);
 
     /* Reset hours to defaults */
     document.getElementById('btn-reset-services').addEventListener('click', function() {
