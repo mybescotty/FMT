@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bus Fleet Maintenance Planner</title>
+  <style>
+    :root {
+      --bg:        #1a1d23;
+      --surface:   #22262f;
+      --surface2:  #2a2f3b;
+      --border:    #3b4253;
+      --accent:    #3b82f6;
+      --accent-dk: #2563eb;
+      --text:      #e2e8f0;
+      --muted:     #94a3b8;
+      --good:      #22c55e;
+      --warn:      #f59e0b;
+      --danger:    #ef4444;
+      --radius:    8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    #app-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 1.5rem;
+    }
+    #app-header h1 { font-size: 1.2rem; font-weight: 700; color: var(--text); }
+    #app-header p  { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+    /* ── Main grid ── */
+    #app-main {
+      display: grid;
+      grid-template-columns: 280px 1fr 320px;
+      gap: 1.25rem;
+      padding: 1.25rem;
+      max-width: 1300px;
+      margin: 0 auto;
+    }
+    @media (max-width: 960px) {
+      #app-main { grid-template-columns: 1fr; }
+    }
+
+    /* ── Panel cards ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem;
+    }
+    .panel h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      border-left: 3px solid var(--accent);
+      padding-left: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    /* ── Form controls ── */
+    .field { margin-bottom: 0.75rem; }
+    .field label {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+    .field input {
+      width: 100%;
+      background: #0f1117;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0.45rem 0.65rem;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .field input:focus { border-color: var(--accent); }
+    .field .hint { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+    /* ── Service table ── */
+    #services-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    #services-table th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0 0.4rem 0.4rem;
+      border-bottom: 1px solid var(--border);
+    }
+    #services-table td {
+      padding: 0.3rem 0.4rem;
+      border-bottom: 1px solid var(--surface2);
+    }
+    #services-table td[contenteditable="true"] {
+      background: #0f1117;
+      border-radius: 4px;
+      outline: none;
+      min-width: 60px;
+      cursor: text;
+    }
+    #services-table td[contenteditable="true"]:focus {
+      outline: 1px solid var(--accent);
+    }
+    .svc-label { font-weight: 700; color: var(--accent); width: 30px; }
+    .num { text-align: right; }
+    .btn-del {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    .btn-del:hover { color: var(--danger); background: rgba(239,68,68,0.1); }
+
+    /* ── Table action buttons ── */
+    .tbl-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .btn {
+      padding: 0.35rem 0.75rem;
+      border-radius: 5px;
+      border: none;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-dk); }
+    .btn-ghost {
+      background: var(--surface2);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { color: var(--text); }
+
+    /* ── Results panel ── */
+    .stat-card {
+      background: var(--surface2);
+      border-radius: var(--radius);
+      padding: 0.85rem 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .stat-card .stat-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    .stat-card .stat-value {
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .stat-card .stat-sub {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+    .stat-good  { color: var(--good)   !important; }
+    .stat-warn  { color: var(--warn)   !important; }
+    .stat-danger{ color: var(--danger) !important; }
+
+    /* ── Breakdown table ── */
+    #breakdown-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    #breakdown-table th {
+      text-align: left;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0 0.4rem 0.4rem;
+      border-bottom: 1px solid var(--border);
+    }
+    #breakdown-table td { padding: 0.3rem 0.4rem; }
+    .bar-cell { width: 40%; }
+    .bar-track {
+      background: var(--surface2);
+      border-radius: 99px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 99px;
+      transition: width 0.2s;
+      min-width: 2px;
+    }
+
+    /* ── Footer ── */
+    #app-footer {
+      text-align: center;
+      padding: 0.75rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+<header id="app-header">
+  <h1>Bus Fleet Maintenance Planner</h1>
+  <p>Calculate mechanic staffing needs based on fleet size and service schedule</p>
+</header>
+
+<main id="app-main">
+
+  <!-- ── Inputs panel ── -->
+  <section class="panel" id="inputs-panel">
+    <h2>Fleet &amp; Work Pattern</h2>
+
+    <div class="field">
+      <label for="input-fleet-size">Fleet size (buses)</label>
+      <input type="number" id="input-fleet-size" min="1" step="1" placeholder="e.g. 50">
+    </div>
+
+    <div class="field">
+      <label for="input-weeks">Planning period (weeks)</label>
+      <input type="number" id="input-weeks" min="1" step="1" placeholder="e.g. 52">
+    </div>
+
+    <div class="field">
+      <label for="input-days-per-week">Working days per week</label>
+      <input type="number" id="input-days-per-week" min="1" max="7" step="1" placeholder="e.g. 5">
+    </div>
+
+    <div class="field">
+      <label for="input-hours-per-day">Working hours per day (per mechanic)</label>
+      <input type="number" id="input-hours-per-day" min="0.5" max="24" step="0.5" placeholder="e.g. 8">
+    </div>
+
+    <div class="field">
+      <label for="input-actual-mechanics">Actual mechanics available <em style="font-style:normal;color:var(--muted)">(optional)</em></label>
+      <input type="number" id="input-actual-mechanics" min="1" step="1" placeholder="Enter to see utilisation">
+      <div class="hint">Shows utilisation % and over/under capacity</div>
+    </div>
+  </section>
+
+  <!-- ── Services panel ── -->
+  <section class="panel" id="services-panel">
+    <h2>Service Schedule</h2>
+
+    <table id="services-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th style="text-align:right">Interval (days)</th>
+          <th style="text-align:right">Hours / visit</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="services-tbody"></tbody>
+    </table>
+
+    <div class="tbl-actions">
+      <button class="btn btn-primary" id="btn-add-row" type="button">+ Add Row</button>
+      <button class="btn btn-ghost" id="btn-reset-services" type="button">Reset to Defaults</button>
+    </div>
+  </section>
+
+  <!-- ── Results panel ── -->
+  <section class="panel" id="results-panel">
+    <h2>Staffing Requirement</h2>
+
+    <div class="stat-card">
+      <div class="stat-label">Mechanics Needed</div>
+      <div class="stat-value" id="result-mechanics-needed">0.00</div>
+      <div class="stat-sub" id="result-mechanics-sub">Enter fleet details to calculate</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Total Maintenance Hours</div>
+      <div class="stat-value" style="font-size:1.6rem" id="result-total-hours">0 h</div>
+      <div class="stat-sub" id="result-hours-sub">Over the planning period</div>
+    </div>
+
+    <div id="result-utilisation-block" style="display:none">
+      <div class="stat-card">
+        <div class="stat-label">Utilisation</div>
+        <div class="stat-value" style="font-size:1.6rem" id="result-util-pct">0%</div>
+        <div class="stat-sub" id="result-capacity-diff"></div>
+      </div>
+    </div>
+
+    <h2 style="margin-top:1rem">Hours by Service Type</h2>
+    <table id="breakdown-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th style="text-align:right">Hours</th>
+          <th style="text-align:right">%</th>
+          <th class="bar-cell"></th>
+        </tr>
+      </thead>
+      <tbody id="breakdown-tbody"></tbody>
+    </table>
+  </section>
+
+</main>
+
+<footer id="app-footer">
+  Service intervals are elapsed calendar days &middot; Mechanic capacity uses working days only
+</footer>
+
+<script>
+  /* ── Static defaults ── */
+  const DEFAULT_SERVICES = [
+    { id: 'A', intervalDays: 42,   hoursPerVisit: 1.5 },
+    { id: 'B', intervalDays: 84,   hoursPerVisit: 3   },
+    { id: 'C', intervalDays: 168,  hoursPerVisit: 5   },
+    { id: 'D', intervalDays: 365,  hoursPerVisit: 8   },
+    { id: 'E', intervalDays: 730,  hoursPerVisit: 12  },
+    { id: 'F', intervalDays: 1095, hoursPerVisit: 16  },
+    { id: 'G', intervalDays: 1825, hoursPerVisit: 24  },
+  ];
+
+  let services = DEFAULT_SERVICES.map(s => ({ ...s }));
+
+  /* ── Core calculation ── */
+  function calculate() {
+    const fleetSize       = parseFloat(document.getElementById('input-fleet-size').value)       || 0;
+    const weeks           = parseFloat(document.getElementById('input-weeks').value)             || 0;
+    const daysPerWeek     = parseFloat(document.getElementById('input-days-per-week').value)     || 5;
+    const hoursPerDay     = parseFloat(document.getElementById('input-hours-per-day').value)     || 8;
+    const actualMechanics = parseFloat(document.getElementById('input-actual-mechanics').value)  || 0;
+
+    /* Service intervals are elapsed calendar time, not working days */
+    const planningCalDays  = weeks * 7;
+    /* Mechanic capacity is working days only */
+    const planningWorkDays = weeks * daysPerWeek;
+
+    const rows = services.map(svc => {
+      const intervalDays  = svc.intervalDays  || 1; /* guard divide-by-zero */
+      const visitsPerBus  = planningCalDays / intervalDays;
+      const totalHours    = visitsPerBus * fleetSize * svc.hoursPerVisit;
+      return { id: svc.id, intervalDays: svc.intervalDays, hoursPerVisit: svc.hoursPerVisit,
+               visitsPerBus, totalHours };
+    });
+
+    const grandTotalHours           = rows.reduce((s, r) => s + r.totalHours, 0);
+    const availableHoursPerMechanic = planningWorkDays * hoursPerDay;
+    const mechanicsNeeded           = availableHoursPerMechanic > 0
+      ? grandTotalHours / availableHoursPerMechanic : 0;
+
+    const rowsWithPct = rows.map(r => ({
+      ...r,
+      pct: grandTotalHours > 0 ? (r.totalHours / grandTotalHours) * 100 : 0,
+    }));
+
+    return { rowsWithPct, grandTotalHours, mechanicsNeeded, actualMechanics,
+             availableHoursPerMechanic, planningWorkDays, hoursPerDay };
+  }
+
+  /* ── DOM update ── */
+  function render() {
+    const result = calculate();
+    const { rowsWithPct, grandTotalHours, mechanicsNeeded,
+            actualMechanics, planningWorkDays, hoursPerDay } = result;
+
+    /* Big mechanic number */
+    document.getElementById('result-mechanics-needed').textContent =
+      mechanicsNeeded.toFixed(2);
+
+    const capHrs = (planningWorkDays * hoursPerDay).toFixed(0);
+    document.getElementById('result-mechanics-sub').textContent =
+      planningWorkDays > 0
+        ? capHrs + ' available hrs per mechanic over period'
+        : 'Enter fleet details to calculate';
+
+    /* Total hours */
+    document.getElementById('result-total-hours').textContent =
+      grandTotalHours.toFixed(1) + ' h';
+
+    /* Utilisation block */
+    const utilBlock = document.getElementById('result-utilisation-block');
+    if (actualMechanics > 0 && mechanicsNeeded > 0) {
+      utilBlock.style.display = '';
+      const utilPct  = (mechanicsNeeded / actualMechanics) * 100;
+      const diffMech = mechanicsNeeded - actualMechanics;
+
+      const pctEl = document.getElementById('result-util-pct');
+      pctEl.textContent = utilPct.toFixed(1) + '%';
+      pctEl.className   = 'stat-value ' + (
+        utilPct > 100 ? 'stat-danger' : utilPct > 90 ? 'stat-warn' : 'stat-good'
+      );
+      pctEl.style.fontSize = '1.6rem';
+
+      const sign = diffMech > 0 ? '+' : '';
+      document.getElementById('result-capacity-diff').textContent =
+        sign + diffMech.toFixed(2) + ' mechanics — ' +
+        (diffMech > 0 ? 'over capacity' : 'spare capacity');
+    } else {
+      utilBlock.style.display = 'none';
+    }
+
+    /* Breakdown table */
+    const tbody = document.getElementById('breakdown-tbody');
+    tbody.innerHTML = rowsWithPct.map(r =>
+      '<tr>' +
+        '<td class="svc-label">' + r.id + '</td>' +
+        '<td class="num">' + r.totalHours.toFixed(1) + ' h</td>' +
+        '<td class="num">' + r.pct.toFixed(1) + '%</td>' +
+        '<td class="bar-cell">' +
+          '<div class="bar-track">' +
+            '<div class="bar-fill" style="width:' + r.pct.toFixed(1) + '%"></div>' +
+          '</div>' +
+        '</td>' +
+      '</tr>'
+    ).join('');
+  }
+
+  /* ── Rebuild editable service table from services[] ── */
+  function rebuildServiceTable() {
+    const tbody = document.getElementById('services-tbody');
+    tbody.innerHTML = services.map((svc, i) =>
+      '<tr data-idx="' + i + '">' +
+        '<td class="svc-label" contenteditable="true">' + svc.id + '</td>' +
+        '<td class="num" contenteditable="true">' + svc.intervalDays + '</td>' +
+        '<td class="num" contenteditable="true">' + svc.hoursPerVisit + '</td>' +
+        '<td><button class="btn-del" data-idx="' + i + '" type="button" title="Remove row">✕</button></td>' +
+      '</tr>'
+    ).join('');
+  }
+
+  /* ── Read editable cells back into services[] ── */
+  function syncServicesFromTable() {
+    services = Array.from(
+      document.querySelectorAll('#services-tbody tr')
+    ).map(tr => {
+      const cells = tr.querySelectorAll('td');
+      return {
+        id:            cells[0].textContent.trim() || '?',
+        intervalDays:  parseFloat(cells[1].textContent) || 1,
+        hoursPerVisit: parseFloat(cells[2].textContent) || 0,
+      };
+    });
+  }
+
+  /* ── Initialise ── */
+  function init() {
+    /* Pre-populate inputs with sensible defaults */
+    document.getElementById('input-fleet-size').value   = 50;
+    document.getElementById('input-weeks').value        = 52;
+    document.getElementById('input-days-per-week').value= 5;
+    document.getElementById('input-hours-per-day').value= 8;
+
+    rebuildServiceTable();
+    render();
+
+    /* Live recalculation on fleet inputs */
+    document.getElementById('inputs-panel').addEventListener('input', function() {
+      render();
+    });
+
+    /* Live recalculation when service table cells are edited */
+    document.getElementById('services-tbody').addEventListener('input', function() {
+      syncServicesFromTable();
+      render();
+    });
+
+    /* Suppress Enter in contenteditable cells (prevents <br> insertion) */
+    document.getElementById('services-tbody').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.target.blur();
+      }
+    });
+
+    /* Delete row */
+    document.getElementById('services-tbody').addEventListener('click', function(e) {
+      const btn = e.target.closest('.btn-del');
+      if (!btn) return;
+      const idx = parseInt(btn.dataset.idx, 10);
+      services.splice(idx, 1);
+      rebuildServiceTable();
+      render();
+    });
+
+    /* Add row */
+    document.getElementById('btn-add-row').addEventListener('click', function() {
+      services.push({ id: String.fromCharCode(65 + services.length), intervalDays: 365, hoursPerVisit: 1 });
+      rebuildServiceTable();
+      render();
+      /* Focus the new row's first cell */
+      const rows = document.querySelectorAll('#services-tbody tr');
+      if (rows.length) rows[rows.length - 1].querySelector('[contenteditable]').focus();
+    });
+
+    /* Reset to defaults */
+    document.getElementById('btn-reset-services').addEventListener('click', function() {
+      services = DEFAULT_SERVICES.map(s => ({ ...s }));
+      rebuildServiceTable();
+      render();
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
